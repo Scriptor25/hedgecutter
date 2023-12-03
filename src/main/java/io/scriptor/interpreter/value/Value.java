@@ -19,6 +19,8 @@ public abstract class Value {
 
     protected abstract boolean same(Value v);
 
+    public abstract Value get(NumValue index);
+
     public abstract String toString();
 
     @Override
@@ -54,6 +56,14 @@ public abstract class Value {
         return this instanceof NumValue;
     }
 
+    public boolean isStr() {
+        return this instanceof StrValue;
+    }
+
+    public boolean isChr() {
+        return this instanceof ChrValue;
+    }
+
     public boolean asBool() {
         if (isArray())
             return true;
@@ -68,27 +78,53 @@ public abstract class Value {
         return (StrValue) this;
     }
 
+    public ChrValue asChr() {
+        return (ChrValue) this;
+    }
+
     public static Value operatorAdd(Value left, Value right) {
+        if (left.isNum() && right.isNum())
+            return NumValue.create(left.asNum().get() + right.asNum().get());
+        if (left.isStr() && right.isChr())
+            return StrValue.create(left.asStr().get() + right.asChr().get());
+        if (left.isChr() && right.isChr())
+            return StrValue.create(Character.toString(left.asChr().get()) + right.asChr().get());
+
         throw new UnsupportedOperationException();
     }
 
     public static Value operatorSub(Value left, Value right) {
+        if (left.isNum() && right.isNum())
+            return NumValue.create(left.asNum().get() - right.asNum().get());
+
         throw new UnsupportedOperationException();
     }
 
     public static Value operatorMul(Value left, Value right) {
+        if (left.isNum() && right.isNum())
+            return NumValue.create(left.asNum().get() * right.asNum().get());
+
         throw new UnsupportedOperationException();
     }
 
     public static Value operatorDiv(Value left, Value right) {
+        if (left.isNum() && right.isNum())
+            return NumValue.create(left.asNum().get() / right.asNum().get());
+
         throw new UnsupportedOperationException();
     }
 
     public static Value operatorMod(Value left, Value right) {
+        if (left.isNum() && right.isNum())
+            return NumValue.create(left.asNum().get() % right.asNum().get());
+
         throw new UnsupportedOperationException();
     }
 
     public static Value operatorCmpL(Value left, Value right) {
+        if (left.isNum() && right.isNum())
+            return NumValue.create(left.asNum().get() < right.asNum().get());
+
         throw new UnsupportedOperationException();
     }
 
@@ -113,6 +149,10 @@ public abstract class Value {
 
     public static Value operatorCmpNE(Value left, Value right) {
         return NumValue.create(!left.equals(right));
+    }
+
+    public static Value operatorNot(Value value) {
+        return NumValue.create(!value.asBool());
     }
 
 }

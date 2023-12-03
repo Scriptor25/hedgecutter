@@ -24,6 +24,11 @@ public class VoidValue extends Value {
     }
 
     @Override
+    public VoidValue get(NumValue index) {
+        return VoidValue.create();
+    }
+
+    @Override
     public String toString() {
         return "";
     }

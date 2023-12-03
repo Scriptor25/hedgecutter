@@ -12,10 +12,19 @@
         },
         {
             "type": "java",
-            "name": "HedgeCutter",
+            "name": "Test",
             "request": "launch",
             "mainClass": "io.scriptor.HedgeCutter",
-            "projectName": "hedgecutter"
+            "projectName": "hedgecutter",
+            "args": ["hc/test.hc"]
+        },
+        {
+            "type": "java",
+            "name": "AOC23 - Day 1",
+            "request": "launch",
+            "mainClass": "io.scriptor.HedgeCutter",
+            "projectName": "hedgecutter",
+            "args": ["aoc23/src/day1.hc", "aoc23/input/day1.txt"]
         }
     ]
 }

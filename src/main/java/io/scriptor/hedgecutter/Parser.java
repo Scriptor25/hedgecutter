@@ -11,11 +11,18 @@ import io.scriptor.hedgecutter.expr.BinExpr;
 import io.scriptor.hedgecutter.expr.CallExpr;
 import io.scriptor.hedgecutter.expr.Expr;
 import io.scriptor.hedgecutter.expr.IdExpr;
+import io.scriptor.hedgecutter.expr.IndexExpr;
+import io.scriptor.hedgecutter.expr.MemExpr;
 import io.scriptor.hedgecutter.expr.NumExpr;
 import io.scriptor.hedgecutter.expr.StrExpr;
+import io.scriptor.hedgecutter.expr.UnExpr;
+import io.scriptor.hedgecutter.stmt.BlockStmt;
+import io.scriptor.hedgecutter.stmt.ForStmt;
 import io.scriptor.hedgecutter.stmt.FuncStmt;
 import io.scriptor.hedgecutter.stmt.GiveStmt;
+import io.scriptor.hedgecutter.stmt.IfStmt;
 import io.scriptor.hedgecutter.stmt.Stmt;
+import io.scriptor.hedgecutter.stmt.VarStmt;
 
 public class Parser {
 
@@ -31,7 +38,7 @@ public class Parser {
 
         final List<Stmt> body = new Vector<>();
         while (!eof())
-            body.add(parseStmt());
+            body.add(parseStmt(true));
 
         return new Program(body.toArray(new Stmt[0]));
     }
@@ -69,19 +76,68 @@ public class Parser {
         return mToken;
     }
 
-    private Stmt parseStmt() {
+    private Stmt parseStmt(boolean end) {
+
+        if (at("{"))
+            return parseBlockStmt();
+
+        if (at("for"))
+            return parseForStmt();
 
         if (at("@"))
             return parseFunctionStmt();
 
         if (at("give"))
-            return parseGiveStmt();
+            return parseGiveStmt(end);
+
+        if (at("if"))
+            return parseIfStmt();
+
+        if (at("$"))
+            return parseVarStmt(end);
 
         final var expr = parseExpr();
-        expect(";");
-        next();
+        if (end) {
+            expect(";");
+            next();
+        }
 
         return expr;
+    }
+
+    private BlockStmt parseBlockStmt() {
+        expect("{");
+        next();
+
+        final List<Stmt> body = new Vector<>();
+        while (!at("}"))
+            body.add(parseStmt(true));
+        next();
+
+        return new BlockStmt(body.toArray(new Stmt[0]));
+    }
+
+    private ForStmt parseForStmt() {
+        expect("for");
+        next();
+        expect("(");
+        next();
+        Stmt begin = null;
+        if (!at(";"))
+            begin = parseStmt(false);
+        expect(";");
+        next();
+        Expr condition = null;
+        if (!at(";"))
+            condition = parseExpr();
+        expect(";");
+        next();
+        Stmt loop = null;
+        if (!at(";"))
+            loop = parseStmt(false);
+        expect(")");
+        next();
+        return new ForStmt(begin, condition, loop, parseStmt(true));
     }
 
     private FuncStmt parseFunctionStmt() {
@@ -111,20 +167,12 @@ public class Parser {
             } while (at(","));
         }
 
-        expect("{");
-        next();
-
-        final List<Stmt> body = new Vector<>();
-        while (!at("}"))
-            body.add(parseStmt());
-        next();
-
         return new FuncStmt(
                 type,
                 name,
                 params.toArray(new Parameter[0]),
                 preconds.toArray(new Expr[0]),
-                body.toArray(new Stmt[0]));
+                parseBlockStmt());
     }
 
     private Parameter parseParameter() {
@@ -144,7 +192,7 @@ public class Parser {
         return new Parameter(new Type(type, array), name);
     }
 
-    private GiveStmt parseGiveStmt() {
+    private GiveStmt parseGiveStmt(boolean end) {
         expect("give");
         next();
 
@@ -154,10 +202,48 @@ public class Parser {
         }
 
         final var expr = parseExpr();
-        expect(";");
-        next();
+        if (end) {
+            expect(";");
+            next();
+        }
 
         return new GiveStmt(expr);
+    }
+
+    private IfStmt parseIfStmt() {
+        expect("if");
+        next();
+        expect("(");
+        next();
+        final var condition = parseExpr();
+        expect(")");
+        next();
+        final var thenStmt = parseStmt(true);
+
+        if (!at("else")) {
+            return new IfStmt(condition, thenStmt, null);
+        }
+
+        expect("else");
+        next();
+
+        return new IfStmt(condition, thenStmt, parseStmt(true));
+    }
+
+    private VarStmt parseVarStmt(boolean end) {
+        expect("$");
+        next();
+        final var name = expect(TokenType.IDENTIFIER).value;
+        next();
+        expect("=");
+        next();
+        final var value = parseExpr();
+        if (end) {
+            expect(";");
+            next();
+        }
+
+        return new VarStmt(name, value);
     }
 
     private Expr parseExpr() {
@@ -165,7 +251,7 @@ public class Parser {
     }
 
     private Expr parseBinCmpExpr() {
-        var left = parseCallExpr();
+        var left = parseBinSumExpr();
 
         while (at("<") || at(">") || at("=") || at("!")) {
             var operator = mToken.value;
@@ -174,28 +260,83 @@ public class Parser {
                 operator += mToken.value;
                 next();
             }
-            final var right = parseCallExpr();
-            left = new BinExpr(left, right, operator);
+
+            if (operator.equals("=")) {
+                return new BinExpr(left, parseExpr(), "=");
+            }
+
+            left = new BinExpr(left, parseBinSumExpr(), operator);
         }
 
         return left;
     }
 
+    private Expr parseBinSumExpr() {
+        var left = parseIndexExpr();
+
+        while (at("+") || at("-")) {
+            var operator = mToken.value;
+            next();
+
+            if (at("=")) {
+                next();
+                return new BinExpr(left, new BinExpr(left, parseExpr(), operator), "="); // x += y --> x = x + y
+            }
+
+            if (at(operator)) {
+                next();
+                return new BinExpr(left, new BinExpr(left, new NumExpr(1), operator), "="); // x++ --> x = x + 1
+            }
+
+            left = new BinExpr(left, parseIndexExpr(), operator);
+        }
+
+        return left;
+    }
+
+    private Expr parseIndexExpr() {
+        var array = parseCallExpr();
+
+        if (at("[")) {
+            next();
+            array = new IndexExpr(array, parseExpr());
+            expect("]");
+            next();
+        }
+
+        return array;
+    }
+
     private Expr parseCallExpr() {
-        var callee = parsePrimaryExpr();
+        var callee = parseMemExpr();
 
         if (at("(")) {
+            next();
             final List<Expr> args = new Vector<>();
-            do {
-                next();
+            while (!at(")") && !eof()) {
                 args.add(parseExpr());
-            } while (at(","));
+                if (!at(","))
+                    break;
+                expect(",");
+                next();
+            }
             expect(")");
             next();
             callee = new CallExpr(callee, args.toArray(new Expr[0]));
         }
 
         return callee;
+    }
+
+    private Expr parseMemExpr() {
+        var object = parsePrimaryExpr();
+
+        while (at(".")) {
+            next();
+            object = new MemExpr(object, parsePrimaryExpr());
+        }
+
+        return object;
     }
 
     private Expr parsePrimaryExpr() {
@@ -213,6 +354,12 @@ public class Parser {
                 return null;
             case OPERATOR:
                 switch (token.value) {
+                    case "!":
+                    case "-":
+                    case "~":
+                    case "&":
+                    case "*":
+                        return new UnExpr(token.value, parseIndexExpr());
                 }
                 break;
         }

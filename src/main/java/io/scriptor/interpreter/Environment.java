@@ -13,7 +13,7 @@ public class Environment {
     private final Environment mGlobal;
     private final Environment mParent;
 
-    private final Map<String, Map<Integer, List<Func>>> mFunctions;
+    private final Map<String, Map<String, Map<Integer, List<Func>>>> mFunctions;
     private final Map<String, Value> mValues = new HashMap<>();
 
     public Environment() {
@@ -36,11 +36,12 @@ public class Environment {
         return mGlobal == this;
     }
 
-    public boolean hasFunc(String name, String... types) {
-        if (!mFunctions.containsKey(name) || !mFunctions.get(name).containsKey(types.length))
+    public boolean hasFunc(String name, String member, String... types) {
+        if (!mFunctions.containsKey(member) || !mFunctions.get(member).containsKey(name)
+                || !mFunctions.get(member).get(name).containsKey(types.length))
             return false;
 
-        final var funcs = mFunctions.get(name).get(types.length);
+        final var funcs = mFunctions.get(member).get(name).get(types.length);
         for (final var func : funcs) {
             int i;
             for (i = 0; i < types.length; i++)
@@ -53,32 +54,36 @@ public class Environment {
         return false;
     }
 
-    public Value execute(String name, Value... args) {
+    public Value execute(String name, Value object, Value... args) {
         final var types = new String[args.length];
         for (int i = 0; i < types.length; i++)
             types[i] = args[i].getType();
 
-        if (!mFunctions.containsKey(name) || !mFunctions.get(name).containsKey(types.length))
-            throw new FormattedException("undefined function %s(%s)", name, Util.toString(false, types));
+        final var member = object == null ? null : object.getType();
+        if (!mFunctions.containsKey(member) || !mFunctions.get(member).containsKey(name)
+                || !mFunctions.get(member).get(name).containsKey(types.length))
+            throw new FormattedException("undefined function %s::%s(%s)", member, name, Util.toString(false, types));
 
-        final var funcs = mFunctions.get(name).get(types.length);
+        final var funcs = mFunctions.get(member).get(name).get(types.length);
         for (final var func : funcs) {
             int i;
             for (i = 0; i < types.length; i++)
                 if (!Types.isCompatible(types[i], func.types[i]))
                     break;
             if (i == types.length)
-                return Interpreter.evaluate(mGlobal, func, args);
+                return Interpreter.evaluate(mGlobal, func, object, args);
         }
 
-        throw new FormattedException("undefined function %s(%s)", name, Util.toString(false, types));
+        throw new FormattedException("undefined function %s::%s(%s)", member, name, Util.toString(false, types));
     }
 
-    public void register(String name, Func func) {
-        if (hasFunc(name, func.types))
-            throw new FormattedException("function %s(%s) already defined", name, Util.toString(false, func.types));
+    public void register(String name, String member, Func func) {
+        if (hasFunc(name, member, func.types))
+            throw new FormattedException("function %s::%s(%s) already defined", member, name,
+                    Util.toString(false, func.types));
 
         mFunctions
+                .computeIfAbsent(member, key -> new HashMap<>())
                 .computeIfAbsent(name, key -> new HashMap<>())
                 .computeIfAbsent(func.types.length, key -> new Vector<>())
                 .add(func);
@@ -105,6 +110,7 @@ public class Environment {
                         value.getType(),
                         mValues.get(name).getType());
             mValues.put(name, value);
+            return;
         }
         if (isOrphan())
             throw new FormattedException("undefined value '%s'", name);

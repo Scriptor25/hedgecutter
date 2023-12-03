@@ -2,7 +2,6 @@ package io.scriptor.interpreter.value;
 
 import java.util.Arrays;
 
-import io.scriptor.Util;
 import io.scriptor.interpreter.Types;
 
 public class NumValue extends Value {
@@ -38,9 +37,18 @@ public class NumValue extends Value {
     }
 
     @Override
+    public NumValue get(NumValue index) {
+        return NumValue.create(get((int) index.get()));
+    }
+
+    @Override
     public String toString() {
-        if (!isArray())
+        if (!isArray()) {
+            final var d = get();
+            if (d == Math.floor(d))
+                return Long.toString((long) d);
             return Double.toString(get());
+        }
         return Arrays.toString(mValues);
     }
 

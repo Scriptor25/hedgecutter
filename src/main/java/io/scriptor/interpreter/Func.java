@@ -6,7 +6,7 @@ public class Func {
 
     @FunctionalInterface
     public interface IFunc {
-        Value call(Environment env, Value... args);
+        Value call(Environment env, Value object, Value... args);
     }
 
     public final IFunc func;

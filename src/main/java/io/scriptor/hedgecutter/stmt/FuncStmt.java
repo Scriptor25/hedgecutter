@@ -12,17 +12,17 @@ public class FuncStmt extends Stmt {
     public final Expr[] preconditions;
     public final Stmt[] body;
 
-    public FuncStmt(String type, String name, Parameter[] params, Expr[] preconds, Stmt[] body) {
+    public FuncStmt(String type, String name, Parameter[] params, Expr[] preconds, BlockStmt body) {
         this.type = type;
         this.name = name;
         this.parameters = params;
         this.preconditions = preconds;
-        this.body = body;
+        this.body = body.body;
     }
 
     @Override
     public String toString() {
-        return String.format("@%s = %s : %s ? %s %n{%n%s%n}",
+        return String.format("@%s = %s : %s ? %s%n{%n%s%n}",
                 name,
                 type,
                 Util.toString(false, parameters),

@@ -37,6 +37,11 @@ public class StrValue extends Value {
     }
 
     @Override
+    public StrValue get(NumValue index) {
+        return StrValue.create(get((int) index.get()));
+    }
+
+    @Override
     public String toString() {
         if (!isArray())
             return get();
@@ -51,15 +56,23 @@ public class StrValue extends Value {
         return mValues[i];
     }
 
+    public static StrValue create(String value) {
+        final var str = new StrValue();
+        str.mValues = new String[] { value == null ? "" : value };
+        return str;
+    }
+
     public static StrValue createArray(int size) {
         final var str = new StrValue(true);
         str.mValues = new String[size];
         return str;
     }
 
-    public static Value create(String value) {
-        final var str = new StrValue();
-        str.mValues = new String[] { value };
+    public static StrValue createArray(String[] values, int offset, int size) {
+        final var str = new StrValue(true);
+        str.mValues = new String[size];
+        for (int i = 0; i < size; i++)
+            str.mValues[i] = values[i + offset];
         return str;
     }
 

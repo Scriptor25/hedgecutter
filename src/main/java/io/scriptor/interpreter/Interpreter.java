@@ -5,11 +5,18 @@ import io.scriptor.hedgecutter.expr.BinExpr;
 import io.scriptor.hedgecutter.expr.CallExpr;
 import io.scriptor.hedgecutter.expr.Expr;
 import io.scriptor.hedgecutter.expr.IdExpr;
+import io.scriptor.hedgecutter.expr.IndexExpr;
+import io.scriptor.hedgecutter.expr.MemExpr;
 import io.scriptor.hedgecutter.expr.NumExpr;
 import io.scriptor.hedgecutter.expr.StrExpr;
+import io.scriptor.hedgecutter.expr.UnExpr;
+import io.scriptor.hedgecutter.stmt.BlockStmt;
+import io.scriptor.hedgecutter.stmt.ForStmt;
 import io.scriptor.hedgecutter.stmt.FuncStmt;
 import io.scriptor.hedgecutter.stmt.GiveStmt;
+import io.scriptor.hedgecutter.stmt.IfStmt;
 import io.scriptor.hedgecutter.stmt.Stmt;
+import io.scriptor.hedgecutter.stmt.VarStmt;
 import io.scriptor.interpreter.value.NumValue;
 import io.scriptor.interpreter.value.StrValue;
 import io.scriptor.interpreter.value.Value;
@@ -25,15 +32,45 @@ public class Interpreter {
     }
 
     public static Value evaluate(Environment env, Stmt stmt) {
+        if (stmt instanceof BlockStmt s)
+            return evaluate(env, s);
+        if (stmt instanceof ForStmt s)
+            return evaluate(env, s);
         if (stmt instanceof FuncStmt s)
             return evaluate(env, s);
         if (stmt instanceof GiveStmt s)
+            return evaluate(env, s);
+        if (stmt instanceof IfStmt s)
+            return evaluate(env, s);
+        if (stmt instanceof VarStmt s)
             return evaluate(env, s);
 
         if (stmt instanceof Expr s)
             return evaluate(env, s);
 
         throw new UnsupportedOperationException();
+    }
+
+    public static Value evaluate(Environment env, BlockStmt stmt) {
+        Value value = null;
+        final var e = new Environment(env);
+        for (final var s : stmt.body) {
+            value = evaluate(e, s);
+            if (value != null && value.isReturn())
+                break;
+        }
+        return value;
+    }
+
+    public static Value evaluate(Environment env, ForStmt stmt) {
+        Value value = null;
+        final var e = new Environment(env);
+        for (evaluate(e, stmt.begin); evaluate(e, stmt.condition).asBool(); evaluate(e, stmt.loop)) {
+            value = evaluate(e, stmt.body);
+            if (value != null && value.isReturn())
+                break;
+        }
+        return value;
     }
 
     public static Value evaluate(Environment env, FuncStmt stmt) {
@@ -44,7 +81,7 @@ public class Interpreter {
             names[i] = stmt.parameters[i].name;
         }
 
-        final Func.IFunc func = (environment, args) -> {
+        final Func.IFunc func = (environment, object, args) -> {
             // check preconditions
             for (final var expr : stmt.preconditions)
                 if (!evaluate(environment, expr).asBool())
@@ -54,7 +91,7 @@ public class Interpreter {
             Value value = null;
             for (final var s : stmt.body) {
                 value = evaluate(environment, s);
-                if (value.isReturn()) {
+                if (value != null && value.isReturn()) {
                     value.setReturn(false);
                     break;
                 }
@@ -74,13 +111,24 @@ public class Interpreter {
             return value;
         };
 
-        env.register(stmt.name, new Func(types, names, func));
+        env.register(stmt.name, null, new Func(types, names, func));
 
         return null;
     }
 
     public static Value evaluate(Environment env, GiveStmt stmt) {
         return evaluate(env, stmt.value).setReturn(true);
+    }
+
+    public static Value evaluate(Environment env, IfStmt stmt) {
+        return evaluate(env, stmt.condition).asBool()
+                ? evaluate(env, stmt.thenBody)
+                : (stmt.elseBody != null) ? evaluate(env, stmt.elseBody) : null;
+    }
+
+    public static Value evaluate(Environment env, VarStmt stmt) {
+        env.create(stmt.name, evaluate(env, stmt.value));
+        return null;
     }
 
     public static Value evaluate(Environment env, Expr expr) {
@@ -90,15 +138,27 @@ public class Interpreter {
             return evaluate(env, e);
         if (expr instanceof IdExpr e)
             return evaluate(env, e);
+        if (expr instanceof IndexExpr e)
+            return evaluate(env, e);
+        if (expr instanceof MemExpr e)
+            return evaluate(env, e);
         if (expr instanceof NumExpr e)
             return evaluate(env, e);
         if (expr instanceof StrExpr e)
+            return evaluate(env, e);
+        if (expr instanceof UnExpr e)
             return evaluate(env, e);
 
         throw new UnsupportedOperationException();
     }
 
     public static Value evaluate(Environment env, BinExpr expr) {
+        if (expr.operator.equals("=")) {
+            final var value = evaluate(env, expr.right);
+            env.set(((IdExpr) expr.left).name, value);
+            return value;
+        }
+
         final var left = evaluate(env, expr.left);
         final var right = evaluate(env, expr.right);
 
@@ -132,20 +192,39 @@ public class Interpreter {
 
     public static Value evaluate(Environment env, CallExpr expr) {
         String name = null;
+        Value object = null;
         if (expr.callee instanceof IdExpr e)
             name = e.name;
-        else
+        else if (expr.callee instanceof MemExpr e) {
+            name = ((IdExpr) e.member).name;
+            object = evaluate(env, e.object);
+        } else
             throw new UnsupportedOperationException();
 
         final var args = new Value[expr.arguments.length];
         for (int i = 0; i < args.length; i++)
             args[i] = evaluate(env, expr.arguments[i]);
 
-        return env.execute(name, args);
+        return env.execute(name, object, args);
     }
 
     public static Value evaluate(Environment env, IdExpr expr) {
         return env.get(expr.name);
+    }
+
+    public static Value evaluate(Environment env, IndexExpr expr) {
+        final var index = evaluate(env, expr.index);
+        final var array = evaluate(env, expr.array);
+        if (!array.isArray())
+            throw new FormattedException("cannot index into non-array value");
+        if (!index.isNum())
+            throw new FormattedException("cannot index into array with non-number value");
+        return array.get(index.asNum());
+    }
+
+    public static Value evaluate(Environment env, MemExpr expr) {
+        final var object = evaluate(env, expr.object);
+        throw new UnsupportedOperationException();
     }
 
     public static Value evaluate(Environment env, NumExpr expr) {
@@ -156,14 +235,28 @@ public class Interpreter {
         return StrValue.create(expr.value);
     }
 
-    public static Value evaluate(Environment env, Func func, Value... args) {
+    public static Value evaluate(Environment env, UnExpr expr) {
+        final var value = evaluate(env, expr.value);
+
+        switch (expr.operator) {
+            case "!":
+                return Value.operatorNot(value);
+        }
+
+        throw new UnsupportedOperationException();
+    }
+
+    public static Value evaluate(Environment env, Func func, Value object, Value... args) {
         final var environment = new Environment(env);
+
+        if (object != null)
+            environment.create("this", object);
 
         // put args into environment
         for (int i = 0; i < func.names.length; i++)
             environment.create(func.names[i], args[i]);
 
-        return func.func.call(environment, args);
+        return func.func.call(environment, object, args);
     }
 
 }
